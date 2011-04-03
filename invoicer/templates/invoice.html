@@ -1,0 +1,369 @@
+{% extends "base.html" %}
+
+{% block title %}Invoice #{{ invoice.invoice_number }}{% endblock %}
+
+{% block stylesheet %}
+    {{ block.super }}
+    <link rel="stylesheet" type="text/css" href="http://ajax.googleapis.com/ajax/libs/jqueryui/1.7/themes/base/jquery-ui.css" />
+    <link rel="stylesheet" type="text/css" href="{{ stylesheet.stylesheet.url }}" />
+{% endblock %}
+
+{% block header %}{% endblock %}
+{% block nav %}{% endblock %}
+{% block footer %}{% endblock %}
+{% block scripts %}{{ block.super }}
+<script type = "text/javascript" src = "http://ajax.googleapis.com/ajax/libs/jqueryui/1.7/jquery-ui.min.js"></script>
+<script src="http://cdn.jquerytools.org/1.1.2/tiny/jquery.tools.min.js"></script>
+<script type="text/javascript">
+$(function(){
+    var indicator = 'Saving...',
+        rows = jQuery("#items tr.item-row"),
+        renumber_rows = function () {
+            var table = jQuery("#items");
+            table.find("tr.item-row").each(function (i){
+                var row = jQuery(this),
+                    bits = row.attr("id").split("-");
+                bits[1] = i;
+                row.attr("id", bits.join("-"));
+                row.find("td").each(function (j){
+                    var td = jQuery(this),
+                        pieces = td.attr("id").split("-");
+                    pieces[1] = i;
+                    td.attr("id", pieces.join("-"));
+                });
+            });
+        },
+        ajaxEdit = function(value, settings){
+            var data = {};
+            var td = jQuery(this);
+            var trs = jQuery("tr.item-row");
+            //gather the data for each item row
+            trs.each(function(){
+                var tr = jQuery(this);
+                data[tr.attr("id")] = tr.attr("name");
+                var tds = tr.children("td");
+                tds.each(function(){
+                    var td = jQuery(this),
+                        input = td.find(":input");
+                    if (td.attr("id")){
+                        if (input.length) {
+                            if (input.attr("type") == "checkbox"){
+                                if (input.attr("checked")) {
+                                    data[td.attr("id")] = "delete";
+                                }
+                            }
+                            else{
+                                data[td.attr("id")] = input.attr("value");
+                            }
+                        }
+                        else {
+                            data[td.attr("id")] = td.text();
+                        }
+                    }
+                });
+            });
+            
+            //send along the id and value so we know what was edited
+            data["element_id"] = td.attr("id");
+            data["value"] = value;
+            
+            //correct for false == empty logic in django form processing
+            for (key in data) {
+                if (key.indexOf("taxable") !== -1 && data[key] !== "Y"){
+                    data[key] = "";
+                }
+            }
+            
+            //add in the required formset fields
+            data["{{formset.management_form.TOTAL_FORMS.html_name}}"] = jQuery("#id_{{ formset.management_form.TOTAL_FORMS.html_name }}").attr("value");
+            data["{{formset.management_form.INITIAL_FORMS.html_name}}"] = jQuery("#id_{{ formset.management_form.INITIAL_FORMS.html_name }}").attr("value");
+            var url = "{% url core:edit_invoice invoice.invoice_number%}";
+            
+            //submit the data
+            var val = jQuery.ajax({
+                data: data,
+                url: url,
+                type: "POST",
+                success: function(data, status){
+                    if (data.status == "success") {
+                        if (data.value == "DELETE"){
+                            var initial_forms = jQuery("#id_{{ formset.management_form.INITIAL_FORMS.html_name }}"),
+                                total_forms = jQuery("#id_{{ formset.management_form.TOTAL_FORMS.html_name }}");
+                            td.parent("tr.item-row").remove();
+                            calculate_totals();
+                            initial_forms.attr("value", parseInt(initial_forms.attr("value"))-1);
+                            total_forms.attr("value", parseInt(total_forms.attr("value"))-1);
+                            renumber_rows();
+                        }
+                        td.removeClass("error").text(data.value);
+                    }
+                    else{
+                        td.addClass("error").text(value);
+                        for (key in data.errors){
+                            var element = jQuery("#" + key);
+                            // do something with the error message here.
+                        }
+                    }
+                },
+                error: function(data, status){
+                    console.log("Ajax error!");
+                },
+                dataType: "json"
+            });
+            return indicator;
+        },
+        calculate_totals = function () {
+            var table = jQuery("#items"),
+                tax_rate = parseFloat(table.find("span.tax_rate").text())/100,
+                subtotal = tax = total = 0;
+            table.find("tr.item-row").each(function () {
+                var row = jQuery(this),
+                    ext = parseFloat(row.find("td.ext_price").text()),
+                    taxable_row = row.find("td.taxable"),
+                    taxable_row_input = taxable_row.find(":input"),
+                    taxable;
+                if (taxable_row_input.length) {
+                    taxable = taxable_row_input.attr("value");
+                }
+                else{
+                    taxable = taxable_row.text();
+                }
+                taxable == "Y" ? tax += ext * tax_rate : tax += 0;
+                subtotal += ext;
+            });
+            total = tax + subtotal;
+            table.find("td.total-value.subtotal").text(subtotal.toFixed(2));
+            table.find("td.total-value.tax").text(tax.toFixed(2));
+            jQuery(".total-value.total").text(total.toFixed(2));
+        }
+    
+    jQuery(".edit:not(.nosave):not(.area):not(.taxable)").editable(ajaxEdit, {
+        indicator:indicator,
+        placeholder:'',
+    });
+    jQuery(".edit.nosave:not(.area)").editable(function(value, settings){return value;}, {placeholder:''});
+    jQuery(".edit.area.nosave").editable(function(value, settings){return value;}, {
+        type:'textarea',
+        rows:3,
+        placeholder:'',
+        submit:'Accept Changes',
+        cancel:'Cancel'
+    });
+    jQuery(".edit.taxable").editable(ajaxEdit, {
+        type:"select",
+        data:{'Y':'Y', 'N':'N'},
+        onblur:"submit"
+    });
+    jQuery("td.recalc").change(function(){
+        var element = jQuery(this),
+            price, quantity, ext_price;
+        if (element.hasClass("price")){
+            price = parseFloat(element.find("input").attr("value")).toFixed(2);
+        }
+        else {
+            price = parseFloat(element.siblings("td.price").text()).toFixed(2);
+        }
+        if (element.hasClass("quantity")){
+            quantity = parseFloat(element.find("input").attr("value")).toFixed(2);
+        }
+        else {
+            quantity = parseFloat(element.siblings("td.quantity").text()).toFixed(2);
+        }
+        ext_price = price * quantity;
+        element.siblings("td.ext_price").text(ext_price.toFixed(2));
+        calculate_totals();
+    });
+    
+    jQuery("#items tr.item-row").tooltip({
+        tip: "#row-tools",
+        delay: 750,
+        predelay: 250,
+        position: "top right",
+        effect: "fade",
+        offset: [15, -25],
+        api: true,
+        lazy: true,
+        onBeforeShow: function(pos) {
+            var row = this.getTrigger().closest("tr.item-row");
+            jQuery("#trigger-row-id").attr("value", row.attr("id"));
+        }
+    });
+    
+    jQuery("#row-tools a.delete-button").overlay({
+        target: "#confirm-delete",
+        expose: { 
+            color: '#333', 
+            loadSpeed: 200, 
+            opacity: 0.9 
+        }
+    });
+    
+    jQuery("#row-tools a.add-button").overlay({
+        target: "#add-modal",
+        expose: {
+            color: '#333',
+            loadSpeed: 200,
+            opacity: 0.9
+        },
+        onBeforeLoad: function () {
+            var container = this.getContent().find("table.container");
+            container.load("{% url core:add_line invoice.invoice_number %}"); 
+        }
+    });
+    
+    jQuery("#confirm-delete button.confirm").click(function () {
+        var id = jQuery("#trigger-row-id").attr("value"),
+            row = jQuery("#" + id),
+            td = row.find("td.delete"),
+            checkbox = row.find("td.delete input:checkbox");
+        checkbox.attr("checked", true);
+        ajaxEdit.apply(td, ["DELETE"]);
+    });
+    jQuery("#id_{{ formset.management_form.TOTAL_FORMS.html_name }}").attr("value", rows.length);
+    jQuery("#id_{{ formset.management_form.INITIAL_FORMS.html_name }}").attr("value", rows.length);
+});
+</script>
+{% endblock %}
+
+{% block content %}
+    <h1 id="logo" alt="logo">{{ invoice.company.name }}</h1>
+
+    <table id="meta">
+        <tbody>
+            <tr>
+                <td class=>Invoice #</td>
+                <td>{{ invoice.invoice_number }}</td>
+            </tr>
+            <tr>
+                <td>Date</td>
+                <td class="edit" id="{{ invoice_form.invoice_date.html_name }}">{{ invoice.invoice_date|date }}</td>
+            </tr>
+            <tr>
+                <td>Amount Due</td>
+                <td>$<span class="total-value total">{{ invoice.total }}</span></td>
+            </tr>
+        </tbody>
+    </table>
+    <hr />
+    <table id='contacts'>
+        <thead>
+            <tr>
+                <th>Company</th>
+                <th>Client</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td id="company">
+                    <p class="name">{{ invoice.company.name }}</p>
+                    <p class="address">{{ invoice.company.address }}</p>
+                    <p class="address2"><span class="city">{{ invoice.company.city }}</span>,&nbsp;<span class="state">{{ invoice.company.state }}</span>&nbsp;<span class="zip">{{ invoice.company.zip_code }}</span></p>
+                    <p class="phone">{{ invoice.company.phone_number }}</p>
+                    <p class="website">{{ invoice.company.website }}</p>
+                    <p class="email">{{ invoice.company.email }}</p>
+                </td>
+
+                <td id="client">
+                    <p class="name edit nosave">{{ invoice.client.name }}</p>
+                    {% if invoice.client.address %}
+                    <p class="address edit nosave">{{ invoice.client.address }}</p>
+                    <p class="address2"><span class="city edit nosave">{{ invoice.client.city }}</span>,&nbsp;<span class="state edit nosave">{{ invoice.client.state }}</span>&nbsp;<span class="zip edit nosave">{{ invoice.client.zip_code }}</span></p>
+                    {% endif %}
+                    <p class="phone edit nosave">{{ invoice.client.phone_number }}</p>
+                    <p class="website edit nosave">{{ invoice.client.website }}</p>
+                    <p class="email edit nosave">{{ invoice.client.email }}</p>
+                </td>
+            </tr>
+        </tbody>
+    </table>
+    
+	{% if stylesheet.introduction_text %}<div><p class="edit area nosave">{{ stylesheet.introduction_text }}</p></div>{% endif %}
+    {{ formset.management_form }}
+    <input type="hidden" id="trigger-row-id" value="" />
+    <table id="items">
+        <thead>
+            <tr>
+                <th class="item text" >Item</th>
+                <th class="price">Price</th>
+                <th class="quantity">Qty.</th>
+                <th class="ext_price">Ext. Price</th>
+                <th class="taxable">Taxable</th>
+                <th class="delete"></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for form in formset.forms %}
+            <tr id="{{form.id.html_name}}" name="{{form.instance.id}}" class="item-row">
+                <td id="{{form.name.html_name}}" class="item text edit">{{form.initial.name}}<div id="{{form.description.html_name}}" class="description text edit">{{form.initial.description}}</div></td>
+                <td id="{{form.price.html_name}}" class="numeric price edit recalc">{{ form.initial.price|floatformat:2 }}</td>
+                <td id="{{form.quantity.html_name}}" class="numeric quantity edit recalc">{{ form.initial.quantity }}</td>
+                <td class="numeric ext_price">{{ form.instance.ext_price|floatformat:2 }}</td>
+                <td id="{{form.taxable.html_name}}" class="taxable edit recalc">{{ form.initial.taxable|yesno:"Y,N" }}</td>
+                <td id="{{form.DELETE.html_name}}" class="delete">
+                    <input type="checkbox" name="{{form.DELETE.html_name}}"></input>
+                </td>
+            </tr>
+            {% endfor %}
+            <tr>
+                <td class="blank"> </td>
+                <td colspan="2" class="total-line">Subtotal</td>
+                <td class="numeric total-value subtotal">{{ invoice.subtotal|floatformat:2 }}</td>
+                <td colspan="2" class="blank"> </td>
+            </tr>
+            <tr>
+                <td class="blank"> </td>
+                <td colspan="2" class="total-line">Tax (<span class="tax_rate">{{ invoice.company.tax_rate }}</span>%)</td>
+                <td class="numeric total-value tax">{{ invoice.tax|floatformat:2 }}</td>
+                <td colspan="2" class="blank"> </td>
+            </tr>
+            <tr>
+                <td class="blank"> </td>
+                <td colspan="2" class="total-line">Total</td>
+                <td class="numeric total-value total">{{ invoice.total|floatformat:2 }}</td>
+                <td colspan="2" class="blank"> </td>
+            </tr>
+        </tbody>
+    </table>
+    
+    <form id="payment-status">
+        <fieldset>
+            <legend>Invoice Status</legend>
+            <h3>{{ invoice.get_status_display }}</h3>
+        </fieldset>
+    </form>
+    
+    <div id="info">
+        {% if invoice.terms.description %}<p class="edit area nosave">{{ invoice.terms.description }}</p>{% endif %}
+        {% if stylesheet.misc_text %}<p class="edit area nosave">{{ stylesheet.misc_text }}</p>{% endif %}
+        {% if stylesheet.feedback_text %}<p class="edit area nosave">{{ stylesheet.feedback_text }}</p>{% endif %}
+        {% if stylesheet.thank_you_text %}<p class="edit area nosave">{{ stylesheet.thank_you_text }}</p>{% endif %}
+    </div>
+    
+    <div id="confirm-delete" class="dialog">
+        <h2>Delete Row</h2>
+        <p>This row will be permanently deleted and cannot be recovered. Are you sure?</p>
+        <p>
+            <button class="close">Cancel</button>
+            <button class="close confirm">Delete</button>
+        </p>
+    </div>
+    
+    <div id="add-modal" class="dialog">
+        <form id="add-form" method="POST" action="{% url core:add_line invoice.invoice_number %}">
+            <input type="hidden" name="invoice" value="{{ invoice.id }}" />
+            <h2>Add Row</h2>
+            <table class="container"></table>
+            <p>
+                <button class="close">Cancel</button>
+                <button type="reset">Reset</button>
+                <button type="submit" class="close confirm">Add</button>
+            </p>
+        </form>
+    </div>
+    
+    <div id="row-tools" class="tooltip">
+        <span><a href="#add" class="add-button">Add</a> | <a href="#delete" class="delete-button">Delete</a></span>
+    </div>
+    
+<hr />
+{% endblock %}
