@@ -34,7 +34,7 @@ class Client(Entity):
     
     @models.permalink
     def get_absolute_url(self):
-        return ('core:client', (), {'id':self.id})
+        return ('invoicer:client', (), {'id':self.id})
     
     def receipts_to_date(self):
         items = LineItem.objects.filter(invoice__client=self).only("price", "quantity", "taxable", "invoice__company__tax_rate").select_related("invoice__company")
@@ -54,7 +54,7 @@ class Company(Entity):
 
     @models.permalink
     def get_absolute_url(self):
-        return ('core:company', (), {'id':self.id})
+        return ('invoicer:company', (), {'id':self.id})
 
     def tax_multiplier(self):
         return self.tax_rate/100 + 1
@@ -136,7 +136,7 @@ class Invoice(models.Model):
     
     @models.permalink
     def get_absolute_url(self):
-        return ('core:invoice', (), {'id':self.invoice_number})
+        return ('invoicer:invoice', (), {'id':self.invoice_number})
     
     def __unicode__(self):
         return self.invoice_number
