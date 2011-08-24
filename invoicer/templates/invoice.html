@@ -62,23 +62,23 @@ $(function(){
                     }
                 });
             });
-            
+
             //send along the id and value so we know what was edited
             data["element_id"] = td.attr("id");
             data["value"] = value;
-            
+
             //correct for false == empty logic in django form processing
             for (key in data) {
                 if (key.indexOf("taxable") !== -1 && data[key] !== "Y"){
                     data[key] = "";
                 }
             }
-            
+
             //add in the required formset fields
             data["{{formset.management_form.TOTAL_FORMS.html_name}}"] = jQuery("#id_{{ formset.management_form.TOTAL_FORMS.html_name }}").attr("value");
             data["{{formset.management_form.INITIAL_FORMS.html_name}}"] = jQuery("#id_{{ formset.management_form.INITIAL_FORMS.html_name }}").attr("value");
-            var url = "{% url core:edit_invoice invoice.invoice_number%}";
-            
+            var url = "{% url invoicer:edit_invoice invoice.invoice_number%}";
+
             //submit the data
             var val = jQuery.ajax({
                 data: data,
@@ -136,7 +136,7 @@ $(function(){
             table.find("td.total-value.tax").text(tax.toFixed(2));
             jQuery(".total-value.total").text(total.toFixed(2));
         }
-    
+
     jQuery(".edit:not(.nosave):not(.area):not(.taxable)").editable(ajaxEdit, {
         indicator:indicator,
         placeholder:'',
@@ -173,7 +173,7 @@ $(function(){
         element.siblings("td.ext_price").text(ext_price.toFixed(2));
         calculate_totals();
     });
-    
+
     jQuery("#items tr.item-row").tooltip({
         tip: "#row-tools",
         delay: 750,
@@ -188,16 +188,16 @@ $(function(){
             jQuery("#trigger-row-id").attr("value", row.attr("id"));
         }
     });
-    
+
     jQuery("#row-tools a.delete-button").overlay({
         target: "#confirm-delete",
-        expose: { 
-            color: '#333', 
-            loadSpeed: 200, 
-            opacity: 0.9 
+        expose: {
+            color: '#333',
+            loadSpeed: 200,
+            opacity: 0.9
         }
     });
-    
+
     jQuery("#row-tools a.add-button").overlay({
         target: "#add-modal",
         expose: {
@@ -207,10 +207,10 @@ $(function(){
         },
         onBeforeLoad: function () {
             var container = this.getContent().find("table.container");
-            container.load("{% url core:add_line invoice.invoice_number %}"); 
+            container.load("{% url invoicer:add_line invoice.invoice_number %}");
         }
     });
-    
+
     jQuery("#confirm-delete button.confirm").click(function () {
         var id = jQuery("#trigger-row-id").attr("value"),
             row = jQuery("#" + id),
@@ -276,7 +276,7 @@ $(function(){
             </tr>
         </tbody>
     </table>
-    
+
 	{% if stylesheet.introduction_text %}<div><p class="edit area nosave">{{ stylesheet.introduction_text }}</p></div>{% endif %}
     {{ formset.management_form }}
     <input type="hidden" id="trigger-row-id" value="" />
@@ -324,21 +324,21 @@ $(function(){
             </tr>
         </tbody>
     </table>
-    
+
     <form id="payment-status">
         <fieldset>
             <legend>Invoice Status</legend>
             <h3>{{ invoice.get_status_display }}</h3>
         </fieldset>
     </form>
-    
+
     <div id="info">
         {% if invoice.terms.description %}<p class="edit area nosave">{{ invoice.terms.description }}</p>{% endif %}
         {% if stylesheet.misc_text %}<p class="edit area nosave">{{ stylesheet.misc_text }}</p>{% endif %}
         {% if stylesheet.feedback_text %}<p class="edit area nosave">{{ stylesheet.feedback_text }}</p>{% endif %}
         {% if stylesheet.thank_you_text %}<p class="edit area nosave">{{ stylesheet.thank_you_text }}</p>{% endif %}
     </div>
-    
+
     <div id="confirm-delete" class="dialog">
         <h2>Delete Row</h2>
         <p>This row will be permanently deleted and cannot be recovered. Are you sure?</p>
@@ -347,9 +347,9 @@ $(function(){
             <button class="close confirm">Delete</button>
         </p>
     </div>
-    
+
     <div id="add-modal" class="dialog">
-        <form id="add-form" method="POST" action="{% url core:add_line invoice.invoice_number %}">
+        <form id="add-form" method="POST" action="{% url invoicer:add_line invoice.invoice_number %}">
             <input type="hidden" name="invoice" value="{{ invoice.id }}" />
             <h2>Add Row</h2>
             <table class="container"></table>
@@ -360,10 +360,10 @@ $(function(){
             </p>
         </form>
     </div>
-    
+
     <div id="row-tools" class="tooltip">
         <span><a href="#add" class="add-button">Add</a> | <a href="#delete" class="delete-button">Delete</a></span>
     </div>
-    
+
 <hr />
 {% endblock %}
